@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import torch, sys, os, argparse
+import torch, sys, os, argparse, json
 sys.path.append('./')
 
 from tqdm import tqdm as tqdm_base
@@ -32,17 +32,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32       = True
 
 # Args
-parser = argparse.ArgumentParser()
-parser.add_argument('--gpu', type=int, default=1)
-parser.add_argument('--ngf', type=int, default=128)
-parser.add_argument('--batch_size', type=int, default=24)
-parser.add_argument('--n_epochs', type=int, default=500)
-parser.add_argument('--num_classes', type=int, default=2600)
-parser.add_argument('--sigma_rate', type=float, default=0.9945)
-parser.add_argument('--file', type=str, default='knee_basis1_norm95')
-parser.add_argument('--image_size', nargs='+', type=int, default=[256, 256])
-parser.add_argument('--depth', type=str, default='large')
-args = parser.parse_args()
+args = json.load(open(sys.path[0] + "/config.json"))
 
 # GPU
 os.environ["CUDA_DEVICE_ORDER"]    = "PCI_BUS_ID";
