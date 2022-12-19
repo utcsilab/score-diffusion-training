@@ -30,7 +30,7 @@ from dotmap import DotMap
 # Always !!!
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32       = True
-
+print(sys.path[0])
 # Args
 args = json.load(open(sys.path[0] + "/config.json"))
 
