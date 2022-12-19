@@ -1,9 +1,0 @@
-{"gpu": 1,
-"ngf": 128,
-"batch_size": 24,
-"n_epochs": 500,
-"num_classes": 2600,
-"sigma_rate": 0.9945,
-"file": "knee_basis1_norm95",
-"image_size": [256, 256],
-"depth": "large"}
