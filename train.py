@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import torch, sys, os, argparse, json
-sys.path.append('./')
+import torch, sys, os, json
+sys.path.append('..')
 
 from tqdm import tqdm as tqdm_base
 def tqdm(*args, **kwargs):
@@ -20,7 +20,7 @@ from ncsnv2.losses        import get_optimizer
 from parameters import pairwise_dist
 from parameters import sigma_rate
 from parameters import step_size
-from parameters import anneal_dsm_score_estimation
+from losses import anneal_dsm_score_estimation
 
 from loaders          import Knee_Basis_Loader
 from torch.utils.data import DataLoader
@@ -30,9 +30,9 @@ from dotmap import DotMap
 # Always !!!
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32       = True
-print(sys.path[0])
+
 # Args
-args = json.load(open(sys.path[0] + "/config.json"))
+args = DotMap(json.load(open("../config.json")))
 
 # GPU
 os.environ["CUDA_DEVICE_ORDER"]    = "PCI_BUS_ID";
@@ -71,6 +71,7 @@ config.data.channels       = 2 # {Re, Im}
 config.data.noise_std      = 0.01 # 'Beta' in paper
 config.data.image_size     = [args.image_size[0], args.image_size[1]]
 config.data.file = args.file
+config.data.path = args.path
 
 print('Training on Dataset: ' + config.data.file + '\n')
 
@@ -80,9 +81,11 @@ dataloader  = DataLoader(dataset, batch_size=config.training.batch_size,
                          shuffle=True, num_workers=config.training.num_workers, 
                          drop_last=True)
 
-# pairwise_dist(config, dataset, tqdm)
+pairwise_dist_path = '../parameters/' + config.data.file + '.txt'
+if not os.path.exists(pairwise_dist_path):
+    pairwise_dist(config, dataset, tqdm)
 
-config.model.sigma_begin = np.loadtxt(sys.path[0] + '/parameters/' + config.data.file + '.txt')
+config.model.sigma_begin = np.loadtxt(pairwise_dist_path)
 # config.model.sigma_rate = sigma_rate(dataset, tqdm)
 config.model.sigma_rate = args.sigma_rate
 config.model.sigma_end  = config.model.sigma_begin * config.model.sigma_rate ** (config.model.num_classes - 1)
