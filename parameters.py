@@ -12,10 +12,10 @@ def pairwise_dist(config, dataset, tqdm):
     for idx in tqdm(range(len(dataset))):
         dist_matrix[idx] = torch.linalg.norm(flat_channels[idx][None, :] - flat_channels, dim=-1)
 
-    if not os.path.exists("../parameters/"):
-        os.makedirs("../parameters/")
+    if not os.path.exists("./parameters/"):
+        os.makedirs("./parameters/")
     
-    np.savetxt('../parameters/' + config.data.file + '.txt', [torch.max(dist_matrix.cpu())])
+    np.savetxt('./parameters/' + config.data.file + '.txt', [torch.max(dist_matrix.cpu())])
 
 def sigma_rate(dataset, tqdm):
     # Apply Song's Technique 2

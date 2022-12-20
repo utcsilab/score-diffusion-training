@@ -2,8 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import torch, sys, os, json
-sys.path.append('..')
+import torch, sys, os, json, argparse
+from dotmap import DotMap
+sys.path.append('.')
+
+# Args
+parser = argparse.ArgumentParser()
+parser.add_argument('--config_path', type=str)
+args = DotMap(json.load(open(parser.parse_args().config_path)))
 
 from tqdm import tqdm as tqdm_base
 def tqdm(*args, **kwargs):
@@ -22,17 +28,12 @@ from parameters import sigma_rate
 from parameters import step_size
 from losses import anneal_dsm_score_estimation
 
-from loaders          import Knee_Basis_Loader
+from loaders import *
 from torch.utils.data import DataLoader
-
-from dotmap import DotMap
 
 # Always !!!
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32       = True
-
-# Args
-args = DotMap(json.load(open("../config.json")))
 
 # GPU
 os.environ["CUDA_DEVICE_ORDER"]    = "PCI_BUS_ID";
@@ -48,7 +49,7 @@ config.model.normalization = 'InstanceNorm++'
 config.model.nonlinearity  = 'elu'
 config.model.sigma_dist    = 'geometric'
 config.model.num_classes   =  int(args.num_classes) # Number of train sigmas and 'N'
-config.model.ngf           = int(args.ngf)
+config.model.ngf           =  int(args.ngf)
 
 # Optimizer
 config.optim.weight_decay  = 0.000 # No weight decay
@@ -69,22 +70,22 @@ config.training.eval_freq      = 100 # In steps
 # Data
 config.data.channels       = 2 # {Re, Im}
 config.data.noise_std      = 0.01 # 'Beta' in paper
-config.data.image_size     = [args.image_size[0], args.image_size[1]]
-config.data.file = args.file
-config.data.path = args.path
+config.data.file           = args.file
+config.data.path           = args.path
 
 print('Training on Dataset: ' + config.data.file + '\n')
 
 # Get datasets and loaders for channels
-dataset     = Knee_Basis_Loader(config)
+dataset     = globals()[args.dataloader](config)
 dataloader  = DataLoader(dataset, batch_size=config.training.batch_size, 
                          shuffle=True, num_workers=config.training.num_workers, 
                          drop_last=True)
 
-pairwise_dist_path = '../parameters/' + config.data.file + '.txt'
+pairwise_dist_path = './parameters/' + config.data.file + '.txt'
 if not os.path.exists(pairwise_dist_path):
     pairwise_dist(config, dataset, tqdm)
 
+config.data.image_size = [dataset.channels.shape[1], dataset.channels.shape[2]]
 config.model.sigma_begin = np.loadtxt(pairwise_dist_path)
 # config.model.sigma_rate = sigma_rate(dataset, tqdm)
 config.model.sigma_rate = args.sigma_rate
@@ -118,7 +119,7 @@ if config.model.ema:
 sigmas = get_sigmas(config)
 
 # More logging
-config.log_path = 'models/' + config.data.file + '/\
+config.log_path = './models/' + config.data.file + '/\
 sigma_begin%d_sigma_end%.4f_num_classes%.1f_sigma_rate%.4f_epochs%.1f' % (
     config.model.sigma_begin, config.model.sigma_end,
     config.model.num_classes, config.model.sigma_rate, 
@@ -151,6 +152,8 @@ for epoch in tqdm(range(start_epoch, config.training.n_epochs)):
         # Keep a running loss
         if step == 1:
             running_loss = loss.item()
+            running_nrmse = nrmse.item()
+            running_nrmse_img = nrmse_img.item()
         else:
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             running_nrmse = 0.99 * running_nrmse + 0.01 * nrmse.item()
