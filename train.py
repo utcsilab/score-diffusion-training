@@ -106,11 +106,10 @@ diffuser = diffuser.cuda()
 # Get a collection of sigma values
 if config.model.get_sigmas:
     sigmas = globals()[config.model.get_sigmas](config)
+    diffuser.sigmas = sigmas
 else:
     sigmas = get_sigmas(config)
     
-diffuser.sigmas = sigmas
-
 # Get optimizer
 optimizer = get_optimizer(config, diffuser.parameters())
 
