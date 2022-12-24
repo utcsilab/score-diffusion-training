@@ -17,11 +17,11 @@ def pairwise_dist(config, dataset, tqdm):
     
     np.savetxt('./parameters/' + config.data.file + '.txt', [torch.max(dist_matrix.cpu())])
 
-def sigma_rate(dataset, tqdm):
+def sigma_rate(dataset, config):
     # Apply Song's Technique 2
     candidate_gamma = np.logspace(np.log10(0.9), np.log10(0.99999), 1000)
     gamma_criterion = np.zeros((len(candidate_gamma)))
-    dataset_shape = np.prod(dataset[0]['X'].shape)
+    dataset_shape = np.prod(dataset[0][config.training.X_train].shape)
 
     for idx, gamma in enumerate(candidate_gamma):
         gamma_criterion[idx] = \
@@ -30,6 +30,15 @@ def sigma_rate(dataset, tqdm):
     
     best_idx = np.argmin(np.abs(gamma_criterion - 0.5))
     return candidate_gamma[best_idx]
+
+def sigma_rate_sure(dataset, config):
+    return (config.data.noise_std / config.model.sigma_begin) ** (1/ (config.model.num_classes))
+
+def get_sigmas_sure(config):
+    sigmas = torch.tensor(config.model.sigma_begin * config.model.sigma_rate ** \
+            np.arange(1, config.model.num_classes) - config.data.noise_std).float().to(config.device)
+
+    return sigmas
 
 def step_size(config):
     # Choose the step size (epsilon) according to [Song '20]
