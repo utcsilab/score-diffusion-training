@@ -90,7 +90,8 @@ if not config.model.sigma_end:
 
 config.model.step_size = step_size(config)
 
-print('\nSigma Begin: ' + str(config.model.sigma_begin))
+print('\nStep Size: ' + str(config.model.step_size))
+print('Sigma Begin: ' + str(config.model.sigma_begin))
 print('Sigma Rate: ' + str(config.model.sigma_rate))
 print('Sigma End: ' + str(config.model.sigma_end) + '\n')
 
