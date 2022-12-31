@@ -88,13 +88,6 @@ if isinstance(config.model.sigma_rate, str):
 if not config.model.sigma_end:
       config.model.sigma_end = config.model.sigma_begin * config.model.sigma_rate ** (config.model.num_classes - 1)
 
-config.model.step_size = step_size(config)
-
-print('\nStep Size: ' + str(config.model.step_size))
-print('Sigma Begin: ' + str(config.model.sigma_begin))
-print('Sigma Rate: ' + str(config.model.sigma_rate))
-print('Sigma End: ' + str(config.model.sigma_end) + '\n')
-
 # Get a model
 if config.model.depth == 'large':
     diffuser = NCSNv2Deepest(config)
@@ -106,10 +99,17 @@ elif config.model.depth == 'low':
 diffuser = diffuser.cuda()
 # Get a collection of sigma values
 if config.model.get_sigmas:
-    sigmas = globals()[config.model.get_sigmas](config)
-    diffuser.sigmas = sigmas
+    config.training.sigmas = globals()[config.model.get_sigmas](config)
+    diffuser.sigmas = config.training.sigmas
 else:
-    sigmas = get_sigmas(config)
+    config.training.sigmas = get_sigmas(config)
+
+config.model.sigma_end = diffuser.sigmas[-1].cpu().numpy()
+config.model.step_size = step_size(config)
+print('\nStep Size: ' + str(config.model.step_size))
+print('Sigma Begin: ' + str(config.model.sigma_begin))
+print('Sigma Rate: ' + str(config.model.sigma_rate))
+print('Sigma End: ' + str(config.model.sigma_end) + '\n')
     
 # Get optimizer
 optimizer = get_optimizer(config, diffuser.parameters())
@@ -131,9 +131,6 @@ sigma_begin%d_sigma_end%.4f_num_classes%.1f_sigma_rate%.4f_epochs%.1f' % (
 if not os.path.exists(config.log_path):
     os.makedirs(config.log_path)
 
-# No sigma logging
-hook = test_hook = None
-
 # Logged metrics
 print('\n')
 train_loss, train_nrmse, train_nrmse_img  = [], [], []
@@ -149,9 +146,8 @@ for epoch in tqdm(range(start_epoch, config.training.n_epochs)):
             sample[key] = sample[key].cuda()
 
         # Get loss on Hermitian channels
-        loss, nrmse, nrmse_img = globals()[config.model.loss](
-            diffuser, sample[config.training.X_train], sigmas, None, 
-            config.training.anneal_power, hook)
+        config.current_sample = sample
+        loss, nrmse, nrmse_img = globals()[config.model.loss](diffuser, config)
         
         # Keep a running loss
         if step == 1:

@@ -1,12 +1,14 @@
 import torch
 
-def anneal_dsm_score_estimation(scorenet, samples, sigmas, labels=None, anneal_power=2., hook=None):
+def anneal_dsm_score_estimation(scorenet, config):
     # This always enters during training
+    samples = config.curent_sample[config.training.X_train]
+
     if labels is None:
         # Randomly sample sigma
-        labels = torch.randint(0, len(sigmas), (samples.shape[0],), device=samples.device)
+        labels = torch.randint(0, len(config.training.sigmas), (samples.shape[0],), device=samples.device)
 
-    used_sigmas = sigmas[labels].view(samples.shape[0], * ([1] * len(samples.shape[1:])))
+    used_sigmas = config.training.sigmas[labels].view(samples.shape[0], * ([1] * len(samples.shape[1:])))
     noise       = torch.randn_like(samples) * used_sigmas
 
     perturbed_samples = samples + noise
@@ -28,13 +30,10 @@ def anneal_dsm_score_estimation(scorenet, samples, sigmas, labels=None, anneal_p
     scores = scores.view(scores.shape[0], -1)
 
     # Multiply each sample by its weight
-    loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** anneal_power
+    loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** config.training.anneal_power
 
     nrmse = (torch.norm((target - scores), dim=1) / torch.norm(target, dim=1))
     nrmse_img = (torch.norm((samples_flatten - samples_est_flatten), dim=1) / torch.norm(samples_flatten, dim=1))
-
-    if hook is not None:
-        hook(loss, labels)
 
     return loss.mean(dim=0), nrmse.mean(dim=0), nrmse_img.mean(dim=0)
 
@@ -103,24 +102,29 @@ def sure_loss(model, y, x, labels, scaling='sigma', sigma_w=0., eps=1e-3):
     return meas_loss, div_loss, denoising_loss, sigma
 
 # No added noise SURE loss
-def vanilla_sure_loss(model, y, x, sigma_w=0., eps=1e-3):
+def vanilla_sure_loss(scorenet, config):
+    y = config.current_sample[config.training.X_train]
+    x = config.current_sample[config.training.X_label]
+    sigma_w = config.current_sample['sigma_w']
+    
     # Forward pass
-    out = model.neutral_forward(y)
+    labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
+    scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    scorenet.logit_transform = True
+    out = scorenet.forward(y, labels)
     
     ## Measurement part of SURE
-    meas_loss = torch.mean(
-        torch.square(torch.abs(out - y)), dim=(-1, -2, -3))
+    meas_loss = torch.mean(torch.square(torch.abs(out - y)), dim=(-1, -2, -3))
     
     ## Divergence part of SURE
     # Sample random direction and increment
     random_dir = torch.randn_like(y)
     
     # Get model output in the scaled, perturbed directions
-    out_eps = model.neutral_forward(
-        y + eps * random_dir)
+    out_eps = scorenet.forward(y + config.optim.eps * random_dir, labels)
     
     # Normalized difference
-    norm_diff = (out_eps - out) / eps
+    norm_diff = (out_eps - out) / config.optim.eps
     # Inner product with the direction vector
     div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
     
@@ -132,7 +136,7 @@ def vanilla_sure_loss(model, y, x, sigma_w=0., eps=1e-3):
         denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(
            out - x)), dim=(-1, -2, -3)))
     
-    return meas_loss, div_loss, denoising_loss, None
+    return torch.mean(meas_loss + div_loss), torch.mean(meas_loss), torch.mean(denoising_loss)
 
 # GSURE loss
 def gsure_loss(model, y, x, x_ls, P, ortho_P, labels, sigma_w=0.,
