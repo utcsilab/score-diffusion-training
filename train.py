@@ -100,7 +100,7 @@ diffuser = diffuser.cuda()
 # Get a collection of sigma values
 if config.model.get_sigmas:
     config.training.sigmas = globals()[config.model.get_sigmas](config)
-    diffuser.sigmas = config.training.sigmas
+    diffuser.sigmas = config.training.sigmas.clone().detach()
 else:
     config.training.sigmas = get_sigmas(config)
 
