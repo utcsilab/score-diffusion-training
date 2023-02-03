@@ -67,7 +67,7 @@ config.data.channels       = 2 # {Re, Im}
 
 print('\nDataset: ' + config.data.file)
 print('Dataloader: ' + config.data.dataloader)
-print('Loss Function: ' + config.model.loss + '\n')
+print('Loss Function: ' + config.model.loss)
 
 # Get datasets and loaders for channels
 dataset     = globals()[config.data.dataloader](config)
@@ -79,7 +79,8 @@ pairwise_dist_path = './parameters/' + config.data.file + '.txt'
 if not os.path.exists(pairwise_dist_path):
     pairwise_dist(config, dataset, tqdm)
 
-config.data.image_size = [dataset.channels.shape[1], dataset.channels.shape[2]]
+config.data.image_size = [next(iter(dataloader))[config.training.X_train].shape[2], next(iter(dataloader))[config.training.X_train].shape[3]]
+print('Image Dimension: ' + str(config.data.image_size) + '\n')
 config.model.sigma_begin = np.loadtxt(pairwise_dist_path)
 
 if isinstance(config.model.sigma_rate, str):
@@ -90,13 +91,12 @@ if not config.model.sigma_end:
 
 # Get a model
 if config.model.depth == 'large':
-    diffuser = NCSNv2Deepest(config)
+    diffuser = NCSNv2Deepest(config).cuda()
 elif config.model.depth == 'medium':
-    diffuser = NCSNv2Deeper(config)
+    diffuser = NCSNv2Deeper(config).cuda()
 elif config.model.depth == 'low':
-    diffuser = NCSNv2(config)
+    diffuser = NCSNv2(config).cuda()
 
-diffuser = diffuser.cuda()
 # Get a collection of sigma values
 if config.model.get_sigmas:
     config.training.sigmas = globals()[config.model.get_sigmas](config)
@@ -117,9 +117,36 @@ optimizer = get_optimizer(config, diffuser.parameters())
 # Counter
 start_epoch = 0
 step = 0
-if config.model.ema:
-    ema_helper = EMAHelper(mu=config.model.ema_rate)
-    ema_helper.register(diffuser)
+ema_helper = EMAHelper(mu=config.model.ema_rate)
+ema_helper.register(diffuser)
+
+if (config.model.loss == "single_level_sure"):
+    denoiser = NCSNv2Deepest(config).cuda()
+    denoiser.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    denoiser.logit_transform = True
+    denoiser_optimizer = get_optimizer(config, denoiser.parameters())
+    denoiser_ema_helper = EMAHelper(mu=config.model.ema_rate)
+    denoiser_ema_helper.register(denoiser)
+    denoiser.train()
+    config.denoiser = denoiser
+    config.epoch = 0
+    
+    a = (config.data.lambda_start - 1) / (config.data.lambda_start)
+    b = 1 / (config.data.lambda_start)
+
+    c = (config.data.lambda_end - 1) / (config.data.lambda_end)
+    d = 1 / (config.data.lambda_end)
+
+    config.training.sure_wt = np.linspace(a, c, config.training.n_epochs)
+    config.training.score_wt = np.linspace(b, d, config.training.n_epochs)
+
+    print('\nSure Weights')
+    print("start: " + str(config.training.sure_wt[0]))
+    print("end: " + str(config.training.sure_wt[-1]))
+
+    print('\nScore Weights')
+    print("\nstart: " + str(config.training.score_wt[0]))
+    print("end: " + str(config.training.score_wt[-1]))
 
 # More logging
 config.log_path = './models/' + config.data.file + '_' + config.data.dataloader + '/\
@@ -166,19 +193,38 @@ for epoch in tqdm(range(start_epoch, config.training.n_epochs)):
         
         # Step
         optimizer.zero_grad()
+        if (config.model.loss == "single_level_sure"):
+            config.epoch = epoch
+            denoiser_optimizer.zero_grad()
+
         loss.backward()
         optimizer.step()
+
+        if (config.model.loss == "single_level_sure"):
+            denoiser_optimizer.step()
+            denoiser_ema_helper.update(denoiser)
+            denoiser.train()
+            config.denoiser = denoiser
         
         # EMA update
-        if config.model.ema:
-            ema_helper.update(diffuser)
+        ema_helper.update(diffuser)
             
         # Verbose
         if step % config.training.eval_freq == 0:
             # Print
             print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f' % 
                 (epoch, step, running_loss, running_nrmse, running_nrmse_img))
-        
+    
+    if (epoch+1) % 50 == 0:
+        # Save snapshot
+        torch.save({'diffuser': diffuser,
+                    'model_state': diffuser.state_dict(),
+                    'config': config,
+                    'loss': train_loss,
+                    'nrmse_noise': train_nrmse,
+                    'nrmse_img': train_nrmse_img}, 
+        os.path.join(config.log_path, 'epoch' + str(epoch+1) + '_final_model.pt'))
+    
 # Save snapshot
 torch.save({'diffuser': diffuser,
             'model_state': diffuser.state_dict(),
