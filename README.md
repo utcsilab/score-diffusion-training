@@ -43,12 +43,12 @@ Configuration files are kept in `configs/`. Configuration files are structured a
 │   └── <num_classes>: determines number of sigmas/noise levels to train the model on. a value between 2000-3000 helps train the model on various levels
 │   └── <sigma_rate>: controls geometric progression of sigmal levels. if SURE training, can specify function "sigma_rate_sure" for automated calculation
 │   └── <get_sigmas>: use "get_sigmas_sure" if SURE training. leave empty otherwise for automated calculation
-│   └── "sigma_end": provide a sigma_end value to specify lowest sigma level. leave empty for automated calculation
+│   └── <sigma_end>: provide a sigma_end value to specify lowest sigma level. leave empty for automated calculation
 ├── data # dataloader and dataset configurations
 │   └── <dataloader>: specify name of the dataloader you have developed
 │   └── <file>: name of file or dataset you will be training on
 │   └── <path>: path where the dataset is kept
-│   └── "noise_std": noise added during training at certain SNR for SURE training
+│   └── <noise_std>: noise added during training at certain SNR for SURE training
 ├── training # training configurations
 │   └── <batch_size>: batch size used by the dataloader
 │   └── <n_epochs>: max # of times training is run on the entire dataset
