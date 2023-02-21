@@ -2,7 +2,7 @@
 
 by [Asad Aali](http://users.ece.utexas.edu/~jtamir/csilab.html) and [Jon Tamir](http://users.ece.utexas.edu/~jtamir/csilab.html), UT CSI Lab.
 
-This repo contains the official implementation for the paper [Improved Techniques for Training Score-Based Generative Models](http://arxiv.org/abs/2006.09011). 
+This repo contains an implementation for the paper [Improved Techniques for Training Score-Based Generative Models](http://arxiv.org/abs/2006.09011). 
 
 by [Yang Song](http://yang-song.github.io/) and [Stefano Ermon](https://cs.stanford.edu/~ermon/), Stanford AI Lab.
 
@@ -61,6 +61,15 @@ Configuration files are kept in `configs/`. Configuration files are structured a
 Models will be saved in `models/`.
 
 ## References
+
+```bib
+@inproceedings{song2020improved,
+  author    = {Ajil Jalal, Marius Arvinte, Alexandros G. Dimakis and Jonathan I. Tamir},
+  title     = {Robust Compressed Sensing MRI with Deep Generative Priors},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2021}
+}
+```
 
 ```bib
 @inproceedings{song2020improved,
