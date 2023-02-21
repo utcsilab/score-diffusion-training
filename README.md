@@ -1,4 +1,4 @@
-# Training Score-Based Generative Models
+# Generic Score-Based Generative Models Pipeline
 
 by [Asad Aali]http://users.ece.utexas.edu/~jtamir/csilab.html) and [Jon Tamir](http://users.ece.utexas.edu/~jtamir/csilab.html), UT CSI Lab.
 
@@ -24,7 +24,7 @@ Run the following to install all necessary python packages for our code.
 pip install -r requirements.txt
 ```
 
-### Project structure
+### Configuration file structure
 
 `train.py` is the file that you should run for training:
 
@@ -62,8 +62,6 @@ Models will be saved in `<exp>models/`.
 
 ## References
 
-If you find the code/idea useful for your research, please consider citing
-
 ```bib
 @inproceedings{song2020improved,
   author    = {Yang Song and Stefano Ermon},
@@ -79,8 +77,6 @@ If you find the code/idea useful for your research, please consider citing
   year      = {2020}
 }
 ```
-
-and/or our previous work
 
 ```bib
 @inproceedings{song2019generative,
