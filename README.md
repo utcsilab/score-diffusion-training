@@ -56,9 +56,9 @@ Configuration files are kept in `configs/`. Configuration files are structured a
 │   └── <X_train>: specify the matrix from the dataloader dictionary to train on
 ```
 
-** Before running training, the highest sigma_level will need to be specified in a .txt file at location parameters/ with name [config.data.file].
+** Before running training, the highest sigma_level will need to be specified in a .txt file at location `parameters/` with name `config.data.file`.
 
-Models will be saved in `<exp>models/`.
+Models will be saved in `models/`.
 
 ## References
 
