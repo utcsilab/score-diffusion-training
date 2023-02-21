@@ -1,4 +1,4 @@
-# Generic Score-Based Generative Models Pipeline
+# Generic Score-Based Generative Model Training Pipeline
 
 by [Asad Aali](http://users.ece.utexas.edu/~jtamir/csilab.html) and [Jon Tamir](http://users.ece.utexas.edu/~jtamir/csilab.html), UT CSI Lab.
 
