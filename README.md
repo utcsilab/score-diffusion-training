@@ -63,11 +63,11 @@ Models will be saved in `models/`.
 ## References
 
 ```bib
-@inproceedings{song2020improved,
-  author    = {Ajil Jalal, Marius Arvinte, Alexandros G. Dimakis and Jonathan I. Tamir},
-  title     = {Robust Compressed Sensing MRI with Deep Generative Priors},
-  booktitle = {Advances in Neural Information Processing Systems},
-  year      = {2021}
+@article{jalal2021robust,
+  title={Robust Compressed Sensing MRI with Deep Generative Priors},
+  author={Jalal, Ajil and Arvinte, Marius and Daras, Giannis and Price, Eric and Dimakis, Alexandros G and Tamir, Jonathan I},
+  journal={Advances in Neural Information Processing Systems},
+  year={2021}
 }
 ```
 
