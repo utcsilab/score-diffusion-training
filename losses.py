@@ -35,63 +35,6 @@ def anneal_dsm_score_estimation(scorenet, config):
 
     return loss.mean(dim=0), nrmse.mean(dim=0), nrmse_img.mean(dim=0)
 
-# SURE loss
-def sure_loss(scorenet, config):
-    y = config.current_sample[config.training.X_train]
-    x = config.current_sample[config.training.X_label]
-    sigma_w = config.current_sample['sigma_w']
-    
-    # Forward pass
-    labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
-    
-    # Fetch sigma from model
-    sigma = config.training.sigmas[labels]
-    scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
-    scorenet.logit_transform = True
-    
-    # Sample noise
-    n = torch.randn_like(y) * sigma[:, None, None, None]
-    perturbed_samples = y + n
-    
-    # Get predicted output
-    if config.training.scaling == 'neutral':
-        fw_sigma = torch.tensor(0., device='cuda')
-    elif config.training.scaling == 'sigma':
-        fw_sigma = torch.sqrt(torch.square(sigma_w) + torch.square(sigma))
-        fw_sigma = fw_sigma[:, None, None, None]
-    
-    # Forward pass
-    out = scorenet.forward(perturbed_samples, labels)
-    
-    ## Measurement part of SURE
-    meas_loss = torch.mean(torch.square(torch.abs(out - perturbed_samples)), dim=(-1, -2, -3))
-    
-    ## Divergence part of SURE
-    # Sample random direction and increment
-    random_dir = torch.randn_like(y)
-    
-    # Get model output in the scaled, perturbed directions
-    out_eps = scorenet.forward(perturbed_samples + config.optim.eps * random_dir, labels)
-    
-    # Normalized difference
-    norm_diff = (out_eps - out) / config.optim.eps
-    
-    # Inner product with the direction vector
-    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
-    
-    # Scale divergence loss
-    div_loss = 2 * (torch.square(sigma) + torch.square(sigma_w)) * div_loss
-          
-    # Peek at true denoising loss
-    with torch.no_grad():
-        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
-    
-    # Scale noise level with function lambda (sigma)
-    meas_loss = torch.pow(torch.sqrt(torch.square(sigma) + torch.square(sigma_w)), -2) * meas_loss
-    div_loss  = torch.pow(torch.sqrt(torch.square(sigma) + torch.square(sigma_w)), -2) * div_loss
-
-    return torch.mean(meas_loss + div_loss), torch.mean(meas_loss), torch.mean(denoising_loss)
-
 # No added noise SURE loss
 def vanilla_sure_loss(scorenet, config):
     y = torch.tensor(config.current_sample[config.training.X_train])
@@ -194,17 +137,16 @@ def single_level_sure(scorenet, config):
 
     return torch.mean(loss), torch.mean(score_loss), torch.mean(nrmse_img)
 
-# GSURE loss
-def gsure_loss(scorenet, config):
+# Multi-Level SURE loss
+def multi_level_sure(scorenet, config):
     y = config.current_sample[config.training.X_train]
     x = config.current_sample[config.training.X_label]
-    x_ls = config.current_sample['x_ls']
-    P = config.current_sample['P']
-    ortho_P = config.current_sample['P_ortho']
     sigma_w = config.current_sample['sigma_w']
     
-    # Fetch sigma from model
+    # Forward pass
     labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
+    
+    # Fetch sigma from model
     sigma = config.training.sigmas[labels]
     scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
     scorenet.logit_transform = True
@@ -214,39 +156,40 @@ def gsure_loss(scorenet, config):
     perturbed_samples = y + n
     
     # Get predicted output
-    # Apply adjoint (complex-valued)
-    y_cplx = perturbed_samples[:, 0] + 1j * perturbed_samples[:, 1]
-    h_cplx = torch.matmul(P.conj().transpose(-1, -2), y_cplx)
-    h      = torch.stack((torch.real(h_cplx), torch.imag(h_cplx)), dim=1)
-
-    out = scorenet.forward(h, labels)
+    if config.training.scaling == 'neutral':
+        fw_sigma = torch.tensor(0., device='cuda')
+    elif config.training.scaling == 'sigma':
+        fw_sigma = torch.sqrt(torch.square(sigma_w) + torch.square(sigma))
+        fw_sigma = fw_sigma[:, None, None, None]
     
-    ## Projection part of GSURE
-    proj_loss = torch.mean(torch.abs(torch.square(torch.matmul(ortho_P, out))), dim=(-1, -2, -3))
+    # Forward pass
+    out = scorenet.forward(perturbed_samples, labels)
     
-    ## Divergence part of GSURE
+    ## Measurement part of SURE
+    meas_loss = torch.mean(torch.square(torch.abs(out - perturbed_samples)), dim=(-1, -2, -3))
+    
+    ## Divergence part of SURE
     # Sample random direction and increment
-    random_dir = torch.randn_like(x)
+    random_dir = torch.randn_like(y)
     
     # Get model output in the scaled, perturbed directions
-    y_out = perturbed_samples + config.optim.eps * random_dir
-    y_cplx = y_out[:, 0] + 1j * y_out[:, 1]
-    h_cplx = torch.matmul(P.conj().transpose(-1, -2), y_cplx)
-    h      = torch.stack((torch.real(h_cplx), torch.imag(h_cplx)), dim=1)
-
-    out_eps = scorenet.forward(h, labels)
+    out_eps = scorenet.forward(perturbed_samples + config.optim.eps * random_dir, labels)
     
     # Normalized difference
     norm_diff = (out_eps - out) / config.optim.eps
-    # Inner product with the direction vector and scale
-    div_loss  = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
-    div_loss  = 2 * (torch.square(sigma) + torch.square(sigma_w)) * div_loss
-          
-    ## Inner product part of GSURE
-    inner_loss = -2 * torch.mean(out * x_ls)
     
+    # Inner product with the direction vector
+    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+    
+    # Scale divergence loss
+    div_loss = 2 * (torch.square(sigma) + torch.square(sigma_w)) * div_loss
+          
     # Peek at true denoising loss
     with torch.no_grad():
         denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
     
-    return torch.mean(proj_loss + div_loss), torch.mean(proj_loss), torch.mean(denoising_loss)
+    # Scale noise level with function lambda (sigma)
+    meas_loss = torch.pow(torch.sqrt(torch.square(sigma) + torch.square(sigma_w)), -2) * meas_loss
+    div_loss  = torch.pow(torch.sqrt(torch.square(sigma) + torch.square(sigma_w)), -2) * div_loss
+
+    return torch.mean(meas_loss + div_loss), torch.mean(meas_loss), torch.mean(denoising_loss)
