@@ -160,6 +160,8 @@ def single_level_sure(scorenet, config):
     with torch.no_grad():
         denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(denoiser_out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
     
+    denoiser_out = (denoiser_out * config.data.std) + (config.data.mean)
+
     # Score Loss
     used_sigmas = config.training.sigmas[labels].view(denoiser_out.shape[0], * ([1] * len(denoiser_out.shape[1:])))
     noise       = torch.randn_like(denoiser_out) * used_sigmas
