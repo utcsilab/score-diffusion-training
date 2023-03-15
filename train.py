@@ -120,34 +120,6 @@ step = 0
 ema_helper = EMAHelper(mu=config.model.ema_rate)
 ema_helper.register(diffuser)
 
-if (config.model.loss == "single_level_sure"):
-    denoiser = NCSNv2Deepest(config).cuda()
-    denoiser.sigmas = torch.ones(config.training.sigmas.shape).cuda()
-    denoiser.logit_transform = True
-    denoiser_optimizer = get_optimizer(config, denoiser.parameters())
-    denoiser_ema_helper = EMAHelper(mu=config.model.ema_rate)
-    denoiser_ema_helper.register(denoiser)
-    denoiser.train()
-    config.denoiser = denoiser
-    config.epoch = 0
-    
-    a = (config.data.lambda_start - 1) / (config.data.lambda_start)
-    b = 1 / (config.data.lambda_start)
-
-    c = (config.data.lambda_end - 1) / (config.data.lambda_end)
-    d = 1 / (config.data.lambda_end)
-
-    config.training.sure_wt = np.linspace(a, c, config.training.n_epochs)
-    config.training.score_wt = np.linspace(b, d, config.training.n_epochs)
-
-    print('\nSure Weights')
-    print("start: " + str(config.training.sure_wt[0]))
-    print("end: " + str(config.training.sure_wt[-1]))
-
-    print('\nScore Weights')
-    print("\nstart: " + str(config.training.score_wt[0]))
-    print("end: " + str(config.training.score_wt[-1]))
-
 # More logging
 config.log_path = './models/' + config.data.file + '_' + config.data.dataloader + '/\
 sigma_begin%d_sigma_end%.4f_num_classes%.1f_sigma_rate%.4f_epochs%.1f' % (
@@ -160,70 +132,65 @@ if not os.path.exists(config.log_path):
 
 # Logged metrics
 print('\n')
-train_loss, train_nrmse, train_nrmse_img  = [], [], []
+train_loss, train_nrmse, train_nrmse_img, train_metric_1, train_metric_2  = [], [], [], [], []
 
-for epoch in tqdm(range(start_epoch, config.training.n_epochs)):
-    for i, sample in tqdm(enumerate(dataloader)):
+for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
+    for i, config.current_sample in tqdm(enumerate(dataloader)):
         # Safety check
         diffuser.train()
         step += 1
         
         # Move data to device
-        for key in sample:
-            sample[key] = sample[key].cuda()
+        for key in config.current_sample:
+            config.current_sample[key] = config.current_sample[key].cuda()
 
         # Get loss on Hermitian channels
-        config.current_sample = sample
-        loss, nrmse, nrmse_img = globals()[config.model.loss](diffuser, config)
+        loss, nrmse, nrmse_img, metric_1, metric_2 = globals()[config.model.loss](diffuser, config)
         
         # Keep a running loss
         if step == 1:
             running_loss = loss.item()
             running_nrmse = nrmse.item()
             running_nrmse_img = nrmse_img.item()
+            running_metric_1 = metric_1.item()
+            running_metric_2 = metric_2.item()
         else:
             running_loss = 0.99 * running_loss + 0.01 * loss.item()
             running_nrmse = 0.99 * running_nrmse + 0.01 * nrmse.item()
             running_nrmse_img = 0.99 * running_nrmse_img + 0.01 * nrmse_img.item()
+            running_metric_1 = 0.99 * running_metric_1 + 0.01 * metric_1.item()
+            running_metric_2 = 0.99 * running_metric_2 + 0.01 * metric_2.item()
     
         # Log
         train_loss.append(loss.item())
         train_nrmse.append(nrmse.item())
         train_nrmse_img.append(nrmse_img.item())
+        train_metric_1.append(metric_1.item())
+        train_metric_2.append(metric_2.item())
         
-        # Step
+        # Step and EMA update
         optimizer.zero_grad()
-        if (config.model.loss == "single_level_sure"):
-            config.epoch = epoch
-            denoiser_optimizer.zero_grad()
-
         loss.backward()
         optimizer.step()
-
-        if (config.model.loss == "single_level_sure"):
-            denoiser_optimizer.step()
-            denoiser_ema_helper.update(denoiser)
-            denoiser.train()
-            config.denoiser = denoiser
-        
-        # EMA update
         ema_helper.update(diffuser)
             
         # Verbose
         if step % config.training.eval_freq == 0:
             # Print
             print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f' % 
-                (epoch, step, running_loss, running_nrmse, running_nrmse_img))
+                (config.epoch, step, running_loss, running_nrmse, running_nrmse_img))
     
-    if (epoch+1) % 50 == 0:
+    if (config.epoch+1) % 50 == 0:
         # Save snapshot
         torch.save({'diffuser': diffuser,
                     'model_state': diffuser.state_dict(),
                     'config': config,
                     'loss': train_loss,
                     'nrmse_noise': train_nrmse,
-                    'nrmse_img': train_nrmse_img}, 
-        os.path.join(config.log_path, 'epoch' + str(epoch+1) + '_final_model.pt'))
+                    'nrmse_img': train_nrmse_img,
+                    'metric_1': train_metric_1,
+                    'metric_2': train_metric_2}, 
+        os.path.join(config.log_path, 'epoch' + str(config.epoch+1) + '_final_model.pt'))
     
 # Save snapshot
 torch.save({'diffuser': diffuser,
@@ -231,5 +198,7 @@ torch.save({'diffuser': diffuser,
             'config': config,
             'loss': train_loss,
             'nrmse_noise': train_nrmse,
-            'nrmse_img': train_nrmse_img}, 
+            'nrmse_img': train_nrmse_img,
+            'metric_1': train_metric_1,
+            'metric_2': train_metric_2}, 
    os.path.join(config.log_path, 'final_model.pt'))
