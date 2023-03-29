@@ -196,8 +196,8 @@ def single_network_sure(scorenet, config):
     score_loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** config.training.anneal_power
     
     # Loss weighting
-    sure__wt = max(1000, 10000 - (config.epoch*100))
-    loss = sure__wt * (meas_loss + div_loss) + score_loss
+    score_wt = config.epoch * config.training.score_wt
+    loss = meas_loss + div_loss + (score_wt * score_loss)
     
     nrmse_img = (torch.norm((samples_flatten - samples_est_flatten), dim=1) / torch.norm(samples_flatten, dim=1))
 

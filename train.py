@@ -177,8 +177,8 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
         # Verbose
         if step % config.training.eval_freq == 0:
             # Print
-            print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f' % 
-                (config.epoch, step, running_loss, running_nrmse, running_nrmse_img))
+            print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f, M1 %.3f, M2 %.3f' % 
+                (config.epoch, step, running_loss, running_nrmse, running_nrmse_img, running_metric_1, running_metric_2))
     
     if (config.epoch+1) % 50 == 0:
         # Save snapshot
