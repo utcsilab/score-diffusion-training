@@ -183,7 +183,7 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
     if (config.epoch+1) % 50 == 0:
         # Save snapshot
         torch.save({'diffuser': diffuser,
-                    'model_state': diffuser.state_dict(),
+                    'model_state': ema_helper.state_dict(),
                     'config': config,
                     'loss': train_loss,
                     'nrmse_noise': train_nrmse,
@@ -194,7 +194,7 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
     
 # Save snapshot
 torch.save({'diffuser': diffuser,
-            'model_state': diffuser.state_dict(),
+            'model_state': ema_helper.state_dict(),
             'config': config,
             'loss': train_loss,
             'nrmse_noise': train_nrmse,
