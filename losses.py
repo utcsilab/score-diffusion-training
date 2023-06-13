@@ -132,3 +132,40 @@ def single_network_sure(scorenet, config):
     denoising_nrmse = torch.mean(torch.sum(torch.square(torch.abs(denoiser_out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
 
     return torch.mean(loss), torch.mean(denoising_nrmse), torch.mean(nrmse_img), torch.mean(score_loss), torch.mean(div_loss)
+
+# No added noise SURE loss
+def gsure_loss(scorenet, config):
+    y = torch.tensor(config.current_sample[config.training.X_train])
+    u = torch.tensor(config.current_sample['u'])
+    x = config.current_sample[config.training.X_label]
+    sigma_w = config.current_sample['sigma_w']
+    
+    # Forward pass
+    labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
+    scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    scorenet.logit_transform = True
+    out = scorenet.forward(u, labels)
+    
+    ## Measurement part of SURE
+    meas_loss = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
+    
+    ## Divergence part of SURE
+    # Sample random direction and increment
+    random_dir = torch.randn_like(u)
+    
+    # Get model output in the scaled, perturbed directions
+    out_eps = scorenet.forward(u + config.optim.eps * random_dir, labels)
+    
+    # Normalized difference
+    norm_diff = (out_eps - out) / config.optim.eps
+    # Inner product with the direction vector
+    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+
+    # Scale divergence loss
+    naive_mult = torch.sum(out * y, dim=(-1, -2, -3))
+          
+    # Peek at true denoising loss
+    with torch.no_grad():
+        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
+    
+    return torch.mean(meas_loss + 2 * (sigma_w**2 * div_loss - naive_mult)), torch.mean(meas_loss), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
