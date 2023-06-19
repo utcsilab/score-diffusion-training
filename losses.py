@@ -42,10 +42,10 @@ def vanilla_sure_loss(scorenet, config):
     sigma_w = config.current_sample['sigma_w']
     
     # Forward pass
-    labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
-    scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
-    scorenet.logit_transform = True
-    out = scorenet.forward(y, labels)
+    labels = torch.randint(0, len(scorenet.module.sigmas), (y.shape[0],), device=y.device)
+    scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    scorenet.module.logit_transform = True
+    out = scorenet(y, labels)
     
     ## Measurement part of SURE
     meas_loss = torch.mean(torch.square(torch.abs(out - y)), dim=(-1, -2, -3))
@@ -55,7 +55,7 @@ def vanilla_sure_loss(scorenet, config):
     random_dir = torch.randn_like(y)
     
     # Get model output in the scaled, perturbed directions
-    out_eps = scorenet.forward(y + config.optim.eps * random_dir, labels)
+    out_eps = scorenet(y + config.optim.eps * random_dir, labels)
     
     # Normalized difference
     norm_diff = (out_eps - out) / config.optim.eps
@@ -78,8 +78,8 @@ def single_network_sure(scorenet, config):
 
     # SURE Denoiser Forward pass
     labels = torch.randint(0, len(config.training.sigmas), (y.shape[0],), device=y.device)
-    scorenet.sigmas[:] = sigma_w[0]
-    denoiser_out = y + (scorenet(y, labels) * (scorenet.sigmas[0] ** 2))
+    scorenet.module.sigmas[:] = sigma_w[0]
+    denoiser_out = y + (scorenet(y, labels) * (scorenet.module.sigmas[0] ** 2))
 
     ## Measurement part of SURE
     meas_loss = torch.mean(torch.square(torch.abs(denoiser_out - y)), dim=(-1, -2, -3))
@@ -88,8 +88,8 @@ def single_network_sure(scorenet, config):
     random_dir = torch.randn_like(y)
     
     # Get model output in the scaled, perturbed directions
-    scorenet.sigmas[:] = sigma_w[0]+(sigma_w[0]*config.optim.eps)
-    denoiser_out_eps = (y + config.optim.eps * random_dir) + (scorenet(y + config.optim.eps * random_dir, labels) *  (scorenet.sigmas[0] ** 2))
+    scorenet.module.sigmas[:] = sigma_w[0]+(sigma_w[0]*config.optim.eps)
+    denoiser_out_eps = (y + config.optim.eps * random_dir) + (scorenet(y + config.optim.eps * random_dir, labels) *  (scorenet.module.sigmas[0] ** 2))
     
     # Normalized difference
     norm_diff = (denoiser_out_eps - denoiser_out) / config.optim.eps
@@ -101,7 +101,7 @@ def single_network_sure(scorenet, config):
     div_loss = 2 * (torch.square(sigma_w)) * div_loss
 
     # Score Loss
-    scorenet.sigmas = config.training.sigmas.clone().detach()
+    scorenet.module.sigmas = config.training.sigmas.clone().detach()
     used_sigmas = config.training.sigmas[labels].view(denoiser_out.shape[0], * ([1] * len(denoiser_out.shape[1:])))
     noise       = torch.randn_like(denoiser_out) * used_sigmas
 
@@ -141,10 +141,10 @@ def gsure_loss(scorenet, config):
     sigma_w = config.current_sample['sigma_w']
     
     # Forward pass
-    labels = torch.randint(0, len(scorenet.sigmas), (y.shape[0],), device=y.device)
-    scorenet.sigmas = torch.ones(config.training.sigmas.shape).cuda()
-    scorenet.logit_transform = True
-    out = scorenet.forward(u, labels)
+    labels = torch.randint(0, len(scorenet.module.sigmas), (y.shape[0],), device=y.device)
+    scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    scorenet.module.logit_transform = True
+    out = scorenet(u, labels)
     
     ## Measurement part of SURE
     meas_loss = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
@@ -154,7 +154,7 @@ def gsure_loss(scorenet, config):
     random_dir = torch.randn_like(u)
     
     # Get model output in the scaled, perturbed directions
-    out_eps = scorenet.forward(u + config.optim.eps * random_dir, labels)
+    out_eps = scorenet(u + config.optim.eps * random_dir, labels)
     
     # Normalized difference
     norm_diff = (out_eps - out) / config.optim.eps

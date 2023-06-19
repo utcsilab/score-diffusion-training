@@ -63,7 +63,8 @@ config.training.log_all_sigmas = False
 config.training.eval_freq      = 100 # In steps
 
 # Data
-config.data.channels       = 2 # {Re, Im}
+if not config.data.channels:
+    config.data.channels = 2 # {Re, Im}
 
 print('\nDataset: ' + config.data.file)
 print('Dataloader: ' + config.data.dataloader)
@@ -97,14 +98,16 @@ elif config.model.depth == 'medium':
 elif config.model.depth == 'low':
     diffuser = NCSNv2(config).cuda()
 
+diffuser = torch.nn.DataParallel(diffuser)
+
 # Get a collection of sigma values
 if config.model.get_sigmas:
     config.training.sigmas = globals()[config.model.get_sigmas](config)
-    diffuser.sigmas = config.training.sigmas.clone().detach()
+    diffuser.module.sigmas = config.training.sigmas.clone().detach()
 else:
     config.training.sigmas = get_sigmas(config)
 
-config.model.sigma_end = diffuser.sigmas[-1].cpu().numpy()
+config.model.sigma_end = diffuser.module.sigmas[-1].cpu().numpy()
 config.model.step_size = step_size(config)
 print('\nStep Size: ' + str(config.model.step_size))
 print('Sigma Begin: ' + str(config.model.sigma_begin))
@@ -180,10 +183,11 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
             print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f, M1 %.3f, M2 %.3f' % 
                 (config.epoch, step, running_loss, running_nrmse, running_nrmse_img, running_metric_1, running_metric_2))
     
-    if (config.epoch+1) % 50 == 0:
+    if (config.epoch+1) % 25 == 0:
         # Save snapshot
-        torch.save({'diffuser': diffuser,
-                    'model_state': ema_helper.state_dict(),
+        torch.save({'optim_state': optimizer.state_dict(),
+                    'model_state': diffuser.state_dict(),
+                    'ema_state': ema_helper.state_dict(),
                     'config': config,
                     'loss': train_loss,
                     'nrmse_noise': train_nrmse,
@@ -193,8 +197,9 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
         os.path.join(config.log_path, 'epoch' + str(config.epoch+1) + '_final_model.pt'))
     
 # Save snapshot
-torch.save({'diffuser': diffuser,
-            'model_state': ema_helper.state_dict(),
+torch.save({'optim_state': optimizer.state_dict(),
+            'model_state': diffuser.state_dict(),
+            'ema_state': ema_helper.state_dict(),
             'config': config,
             'loss': train_loss,
             'nrmse_noise': train_nrmse,
