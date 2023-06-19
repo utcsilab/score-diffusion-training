@@ -135,19 +135,19 @@ def single_network_sure(scorenet, config):
 
 # No added noise SURE loss
 def gsure_loss(scorenet, config):
-    y = torch.tensor(config.current_sample[config.training.X_train])
-    u = torch.tensor(config.current_sample['u'])
-    x = config.current_sample[config.training.X_label]
+    h_est = config.current_sample['h_est']
+    u = config.current_sample[config.training.X_train]
+    h = config.current_sample[config.training.X_label]
     sigma_w = config.current_sample['sigma_w']
     
     # Forward pass
-    labels = torch.randint(0, len(scorenet.module.sigmas), (y.shape[0],), device=y.device)
+    labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
     scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
     scorenet.module.logit_transform = True
     out = scorenet(u, labels)
     
     ## Measurement part of SURE
-    meas_loss = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
+    h_u = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
     
     ## Divergence part of SURE
     # Sample random direction and increment
@@ -162,10 +162,10 @@ def gsure_loss(scorenet, config):
     div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
 
     # Scale divergence loss
-    naive_mult = torch.sum(out * y, dim=(-1, -2, -3))
+    naive_mult = torch.mean(out * h_est, dim=(-1, -2, -3))
           
     # Peek at true denoising loss
     with torch.no_grad():
-        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
+        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - h)), dim=(-1, -2, -3))) / (h.shape[-1] * h.shape[-2])
     
-    return torch.mean(meas_loss + 2 * (sigma_w**2 * div_loss - naive_mult)), torch.mean(meas_loss), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
+    return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(div_loss), torch.mean(naive_mult), torch.mean(denoising_loss)
