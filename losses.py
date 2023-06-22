@@ -30,8 +30,8 @@ def anneal_dsm_score_estimation(scorenet, config):
     # Multiply each sample by its weight
     loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** config.training.anneal_power
 
-    nrmse = (torch.norm((target - scores), dim=1) / torch.norm(target, dim=1))
-    nrmse_img = (torch.norm((samples_flatten - samples_est_flatten), dim=1) / torch.norm(samples_flatten, dim=1))
+    nrmse = torch.linalg.norm(target-scores) / torch.linalg.norm(target)
+    nrmse_img = torch.linalg.norm(samples_flatten-samples_est_flatten) / torch.linalg.norm(samples_flatten)
 
     return loss.mean(dim=0), nrmse.mean(dim=0), nrmse_img.mean(dim=0), torch.tensor(0), torch.tensor(0)
 
@@ -67,7 +67,7 @@ def vanilla_sure_loss(scorenet, config):
           
     # Peek at true denoising loss
     with torch.no_grad():
-        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
+        denoising_loss = torch.linalg.norm(out-x) / torch.linalg.norm(x)
     
     return torch.mean(meas_loss + div_loss), torch.mean(meas_loss), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
 
@@ -128,8 +128,8 @@ def single_network_sure(scorenet, config):
     score_wt = config.training.score_wt * config.epoch
     loss = meas_loss + div_loss + (score_wt * score_loss)
     
-    nrmse_img = (torch.norm((samples_flatten - samples_est_flatten), dim=1) / torch.norm(samples_flatten, dim=1))
-    denoising_nrmse = torch.mean(torch.sum(torch.square(torch.abs(denoiser_out - x)), dim=(-1, -2, -3))) / (x.shape[-1] * x.shape[-2])
+    nrmse_img = torch.linalg.norm(samples_flatten-samples_est_flatten) / torch.linalg.norm(samples_flatten)
+    denoising_nrmse = torch.linalg.norm(denoiser_out-x) / torch.linalg.norm(x)
 
     return torch.mean(loss), torch.mean(denoising_nrmse), torch.mean(nrmse_img), torch.mean(score_loss), torch.mean(div_loss)
 
@@ -138,7 +138,6 @@ def gsure_loss(scorenet, config):
     h_est = config.current_sample['h_est']
     u = config.current_sample[config.training.X_train]
     h = config.current_sample[config.training.X_label]
-    sigma_w = config.current_sample['sigma_w']
     
     # Forward pass
     labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
@@ -166,6 +165,6 @@ def gsure_loss(scorenet, config):
           
     # Peek at true denoising loss
     with torch.no_grad():
-        denoising_loss = torch.mean(torch.sum(torch.square(torch.abs(out - h)), dim=(-1, -2, -3))) / (h.shape[-1] * h.shape[-2])
+        denoising_loss = torch.linalg.norm(out-h) / torch.linalg.norm(h)
     
-    return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(div_loss), torch.mean(naive_mult), torch.mean(denoising_loss)
+    return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
