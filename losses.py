@@ -169,6 +169,70 @@ def gsure_loss(scorenet, config):
     
     return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
 
+def lr_single_network_sure(scorenet, config):
+    h_est = config.current_sample['h_est']
+    u = config.current_sample[config.training.X_train]
+    h = config.current_sample[config.training.X_label]
+    sigma_w = config.current_sample['sigma_w']
+
+    # SURE Denoiser Forward pass
+    labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
+    scorenet.module.sigmas[:] = sigma_w[0]
+    denoiser_out = u + (scorenet(u, labels) * (scorenet.module.sigmas[0] ** 2))
+
+    ## Measurement part of SURE
+    h_u = torch.mean(torch.square(torch.abs(denoiser_out)), dim=(-1, -2, -3))
+    
+    ## Divergence part of SURE
+    # Sample random direction and increment
+    random_dir = torch.randn_like(u)
+    
+    # Get model output in the scaled, perturbed directions
+    scorenet.module.sigmas[:] = scorenet.module.sigmas[0]+(scorenet.module.sigmas[0]*config.optim.eps)
+    denoiser_out_eps = (u + config.optim.eps * random_dir) + (scorenet(u + config.optim.eps * random_dir, labels) *  (scorenet.module.sigmas[0] ** 2))
+    
+    # Normalized difference
+    norm_diff = (denoiser_out_eps - denoiser_out) / config.optim.eps
+
+    # Inner product with the direction vector
+    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+
+    # Scale divergence loss
+    naive_mult = torch.mean(denoiser_out * h_est, dim=(-1, -2, -3))
+    
+    # Score Loss
+    scorenet.module.sigmas = config.training.sigmas.clone().detach()
+    used_sigmas = config.training.sigmas[labels].view(denoiser_out.shape[0], * ([1] * len(denoiser_out.shape[1:])))
+    noise       = torch.randn_like(denoiser_out) * used_sigmas
+
+    perturbed_samples = denoiser_out + noise
+
+    # Desired output
+    target = - 1 / (used_sigmas ** 2) * noise
+
+    # Actual output
+    scores = scorenet(perturbed_samples, labels)
+    
+    samples_est = perturbed_samples + (scores * (used_sigmas ** 2))
+    samples_flatten = h.view(denoiser_out.shape[0], -1)
+    samples_est_flatten = samples_est.view(samples_est.shape[0], -1)
+
+    # L2 regression
+    target = target.view(target.shape[0], -1)
+    scores = scores.view(scores.shape[0], -1)
+    
+    # Multiply each sample by its weight
+    score_loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** config.training.anneal_power
+    
+    # # Loss weighting
+    score_wt = config.training.score_wt * config.epoch
+    loss = h_u + 2 * (div_loss - naive_mult) + (score_wt * score_loss)
+    
+    nrmse_img = torch.linalg.norm(samples_flatten-samples_est_flatten) / torch.linalg.norm(samples_flatten)
+    denoising_nrmse = torch.linalg.norm(denoiser_out-h) / torch.linalg.norm(h)
+
+    return torch.mean(loss), torch.mean(denoising_nrmse), torch.mean(nrmse_img), torch.tensor(0), torch.mean(div_loss)
+
 # No added noise SURE loss
 def lr_yonina_gsure_loss(scorenet, config):
     h_est = config.current_sample['h_est']
