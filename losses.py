@@ -37,7 +37,7 @@ def anneal_dsm_score_estimation(scorenet, config):
 
 # No added noise SURE loss
 def vanilla_sure_loss(scorenet, config):
-    y = torch.tensor(config.current_sample[config.training.X_train])
+    y = config.current_sample[config.training.X_train]
     x = config.current_sample[config.training.X_label]
     sigma_w = config.current_sample['sigma_w']
     
@@ -159,15 +159,13 @@ def gsure_loss(scorenet, config):
     norm_diff = (out_eps - out) / config.optim.eps
     # Inner product with the direction vector
     div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
-
-    # Scale divergence loss
     naive_mult = torch.mean(out * h_est, dim=(-1, -2, -3))
           
     # Peek at true denoising loss
     with torch.no_grad():
         denoising_loss = torch.linalg.norm(out-h) / torch.linalg.norm(h)
     
-    return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(denoising_loss), torch.tensor(0), torch.tensor(0)
+    return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(denoising_loss), torch.mean(div_loss), torch.mean(naive_mult)
 
 def lr_single_network_sure(scorenet, config):
     h_est = config.current_sample['h_est']

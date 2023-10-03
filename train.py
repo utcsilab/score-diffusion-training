@@ -183,7 +183,7 @@ for config.epoch in tqdm(range(start_epoch, config.training.n_epochs)):
             print('Epoch %d, Step %d, Loss (EMA) %.3f, NRMSE (Noise) %.3f, NRMSE (Image) %.3f, M1 %.3f, M2 %.3f' % 
                 (config.epoch, step, running_loss, running_nrmse, running_nrmse_img, running_metric_1, running_metric_2))
     
-    if (config.epoch+1) % 25 == 0:
+    if (config.epoch+1) % 100 == 0:
         # Save snapshot
         torch.save({'optim_state': optimizer.state_dict(),
                     'model_state': diffuser.state_dict(),
