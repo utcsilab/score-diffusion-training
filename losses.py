@@ -143,22 +143,28 @@ def gsure_loss(scorenet, config):
     labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
     scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
     scorenet.module.logit_transform = True
+    if config.training.div == "HS":
+        u.requires_grad_(True)
     out = scorenet(u, labels)
     
     ## Measurement part of SURE
     h_u = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
     
-    ## Divergence part of SURE
-    # Sample random direction and increment
-    random_dir = torch.randn_like(u)
+    if config.training.div == "HS":
+        random_dir = torch.sign(torch.randn_like(u))
+        with torch.enable_grad():
+            fn_eps = torch.sum(out * random_dir)
+            grad_fn_eps = torch.autograd.grad(fn_eps, u, create_graph=True)[0]
+        u.requires_grad_(False)
+        div_loss = torch.mean(grad_fn_eps * random_dir, dim=tuple(range(1, len(u.shape))))
     
-    # Get model output in the scaled, perturbed directions
-    out_eps = scorenet(u + config.optim.eps * random_dir, labels)
-    
-    # Normalized difference
-    norm_diff = (out_eps - out) / config.optim.eps
-    # Inner product with the direction vector
-    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+    else:
+        ## Divergence part of SURE
+        random_dir = torch.randn_like(u)
+        out_eps = scorenet(u + config.optim.eps * random_dir, labels)
+        norm_diff = (out_eps - out) / config.optim.eps
+        div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+
     naive_mult = torch.mean(out * h_est, dim=(-1, -2, -3))
           
     # Peek at true denoising loss
@@ -166,6 +172,77 @@ def gsure_loss(scorenet, config):
         denoising_loss = torch.linalg.norm(out-h) / torch.linalg.norm(h)
     
     return torch.mean(h_u + 2 * (div_loss - naive_mult)), torch.mean(h_u), torch.mean(denoising_loss), torch.mean(div_loss), torch.mean(naive_mult)
+
+# No added noise SURE loss
+def gsure_supervised(scorenet, config):
+    h_est = config.current_sample['h_est']
+    u = config.current_sample[config.training.X_train]
+    h = config.current_sample[config.training.X_label]
+    
+    # Forward pass
+    labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
+    scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    scorenet.module.logit_transform = True
+    out = scorenet(u, labels)
+    
+    ## Measurement part of SURE
+    h_u = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
+    naive_mult = torch.mean(out * h, dim=(-1, -2, -3))
+          
+    # Peek at true denoising loss
+    with torch.no_grad():
+        denoising_loss = torch.linalg.norm(out-h) / torch.linalg.norm(h)
+    
+    return torch.mean(h_u - 2*naive_mult), torch.mean(h_u), torch.mean(denoising_loss), torch.mean(naive_mult), torch.tensor(0)
+
+def gsure_single_network(scorenet, config):
+    h_est = config.current_sample['h_est']
+    u = config.current_sample[config.training.X_train]
+    h = config.current_sample[config.training.X_label]
+    noise_var = config.current_sample['noise_var'][...,None,None,None]
+    
+    # Forward pass
+    labels = torch.randint(0, len(scorenet.module.sigmas), (h_est.shape[0],), device=h_est.device)
+    scorenet.module.sigmas = torch.ones(config.training.sigmas.shape).cuda()
+    out = (u*noise_var) + (scorenet(u, labels) * (scorenet.module.sigmas[0] ** 2))
+
+    ## Measurement part of SURE
+    h_u = torch.mean(torch.square(torch.abs(out)), dim=(-1, -2, -3))
+    
+    ## Divergence part of SURE
+    random_dir = torch.randn_like(u)
+    out_eps = ((u + config.optim.eps * random_dir) * noise_var) + (scorenet(u + config.optim.eps * random_dir, labels) *  (scorenet.module.sigmas[0] ** 2))
+    norm_diff = (out_eps - out) / config.optim.eps
+    div_loss = torch.mean(random_dir * norm_diff, dim=(-1, -2, -3))
+    
+    naive_mult = torch.mean(out * h_est, dim=(-1, -2, -3))
+    gsure_loss = torch.mean(h_u + 2 * (div_loss - naive_mult))
+
+    # Score Loss
+    scorenet.module.sigmas = config.training.sigmas.clone().detach()
+    used_sigmas = config.training.sigmas[labels].view(out.shape[0], * ([1] * len(out.shape[1:])))
+    noise       = torch.randn_like(out) * used_sigmas
+
+    perturbed_samples = out + noise
+    target = - 1 / (used_sigmas ** 2) * noise
+    scores = scorenet(perturbed_samples, labels)
+    
+    with torch.no_grad():
+        samples_est = perturbed_samples + (scores * (used_sigmas ** 2))
+        samples_flatten = h.view(out.shape[0], -1)
+        samples_est_flatten = samples_est.view(samples_est.shape[0], -1)
+
+    # L2 regression
+    target = target.view(target.shape[0], -1)
+    scores = scores.view(scores.shape[0], -1)
+    score_loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** config.training.anneal_power
+    loss = gsure_loss + (config.training.score_wt * score_loss.mean(dim=0))
+    
+    with torch.no_grad():
+        nrmse_img = torch.linalg.norm(samples_flatten-samples_est_flatten) / torch.linalg.norm(samples_flatten)
+        denoising_nrmse = torch.linalg.norm(out-h) / torch.linalg.norm(h)
+
+    return torch.mean(loss), torch.mean(denoising_nrmse), torch.mean(nrmse_img), torch.mean(score_loss), torch.mean(gsure_loss)
 
 def lr_single_network_sure(scorenet, config):
     h_est = config.current_sample['h_est']
